@@ -12,6 +12,8 @@ from Queue import Queue
 from tools import *
 import json
 from collections import defaultdict
+import re
+import copy
 
 
 class ThreadLyrics(Thread):
@@ -30,10 +32,16 @@ class ThreadLyrics(Thread):
             if response.status_code == 200:
                 print('success: ' + response.text[:50])
                 print('adding ' + song_name + ' to db')
+                
                 soup = bs(response.text)
                 soup_results = soup.find_all('div', class_='lyrics')
-                lyrics = [element.text for element in soup_results]
-                self.db[song_name] = lyrics
+                lyrics = [element.text for element in soup_results][0]
+                verse_dict = {'raw': copy.deepcopy(lyrics), 'pro': dict()}
+                verses = re.findall(r'(\[.{4,}\])(?!\n\n)\n([\w\W\n]*?)(?=\n\[)', lyrics)
+                verse_order = re.findall(r'\[.{4,}\]', lyrics)
+                verse_dict['pro']['order'] = verse_order
+                verse_dict['pro']['verses'] = verses
+                self.db[song_name] = verse_dict
             else:
                 print(song_name + ' download failed')
             print(song_name + ' task completed')
@@ -74,7 +82,7 @@ def fetch_artist_song_links(artist_id):
     base = 'http://genius.com/artists/songs'
     songs = list()
 
-    while current_page < 3:
+    while True:
         url = ('{0}?for_artist_page={1}&page={2}'
                .format(base, artist_id, current_page))
         song_link_xpath = '//a[@class="song_name work_in_progress   song_link"]/@href'
@@ -93,16 +101,18 @@ def fetch_artist_song_links(artist_id):
 
 def fetch_lyrics(song_links, name):
     #initializes dictionary, populates the keys beforehand to make the 
-    #dictionary thread safe
+    #dictionary thread safe, as adding or deleting keys is not threadsafe
+    #in the CPython implimentation
     lyrics_db = defaultdict(dict)
     for link in song_links:
         lyrics_db[link.split('/')[-1].split('-lyrics')[0]]
     q = Queue()
-    thread_pool(q, 5, ThreadLyrics, database=lyrics_db)
+    thread_pool(q, 10, ThreadLyrics, database=lyrics_db)
     for link in song_links:
-        q.put((link))
+        print(link)
+        q.put(link)
     q.join()
-    
+
     with open(ap('lyrics/' + name + '.json'), 'wb') as fp:
         json.dump(lyrics_db, fp, indent=4)
     
@@ -113,4 +123,4 @@ if __name__ == '__main__':
     name = 'gucci mane'
     artist_id = fetch_artist_id(name)
     song_links = fetch_artist_song_links(artist_id)
-    print(fetch_lyrics(song_links, name))
+    fetch_lyrics(song_links, name)
