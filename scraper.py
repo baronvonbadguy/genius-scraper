@@ -13,40 +13,72 @@ from tools import *
 import json
 from collections import defaultdict
 import re
-import copy
 
 
 class ThreadLyrics(Thread):
-    def __init__(self, queue, db):
+    def __init__(self, queue, payload):
         self.q = queue
-        self.db = db
+        self.db = payload['database']
         Thread.__init__(self)
 
     def run(self):
         while True:
             #grab some data from the queue
-            link = self.q.get()
+            link, name = self.q.get()
             song_name = link.split('/')[-1].split('-lyrics')[0]
             response = rq.get(link)
-            
+
             if response.status_code == 200:
                 print('success: ' + response.text[:50])
                 print('adding ' + song_name + ' to db')
-                
+
                 soup = bs(response.text)
                 soup_results = soup.find_all('div', class_='lyrics')
                 lyrics = [element.text for element in soup_results][0]
-                verse_dict = {'raw': copy.deepcopy(lyrics), 'pro': dict()}
-                verses = re.findall(r'(\[.{4,}\])(?!\n\n)\n([\w\W\n]*?)(?=\n\[)', lyrics)
-                verse_order = re.findall(r'\[.{4,}\]', lyrics)
-                verse_dict['pro']['order'] = verse_order
-                verse_dict['pro']['verses'] = verses
-                self.db[song_name] = verse_dict
+
+                block_dict = {'raw': lyrics, 'pro': dict()}
+
+                #regex to parse block header order, block headers look like 
+                #'[ Verse 1: Gucci Mane ]' or '[Hook]'
+                block_order = re.findall(r'(\[.{4,}(?!\?)\])\n', lyrics)
+
+                #regex to parse all blocks, except for block references
+                # (\[.{4,}(?!\?)\]) match verse headers, but not 
+                #inline question blocks, e.g [???]
+                    # (?!\n\n) lookahead to filter block references out
+                # \n filters out the newline 'artist': name'artist': nametrailing block headers
+                # ([\w\W\n]*?) matches all following chracters, not greedy
+                    # (?=(\n\[|$)) lookahead to stop when we hit the next header
+                    #or the end of the lyrics
+                block_regex = r'(\[.{4,}(?!\?)\])(?!\n\n)\n([\w\W\n]*?)(?=(\n\[|$))'
+                blocks = re.findall(block_regex, lyrics)
+                
+                #uses a regex search to match the blocks we want to return
+                #then returns them as a dictionary instead of nested list
+                regex_blocks = lambda regex: {block[0]: block[1] for block in blocks
+                                              if re.search(regex, block[0])
+                                              and len(block[1]) > 0}
+
+                name = name.replace('-', ' ')
+                names_regex = '|'.join((name.upper(), name,
+                                        name.title(), name.lower()))
+
+                verses = regex_blocks('[vV]erse|' + names_regex)
+                hooks = regex_blocks('[hH]ook|[cC]horus')
+                intro = regex_blocks('[iI]ntro')
+
+                block_dict['pro']['order'] = block_order
+                block_dict['pro']['blocks'] = {'hooks': hooks, 'verses': verses}
+
+                if intro:
+                    block_dict['pro']['blocks']['intro'] = intro
+
+                self.db[song_name] = block_dict
             else:
                 print(song_name + ' download failed')
             print(song_name + ' task completed')
             self.q.task_done()
-
+1
 
 def xpath_query_url(url, xpath_query):
     headers = {'User-Agent': 'Mozilla/5.0 Gecko/20100101 Firefox/35.0'}
@@ -74,7 +106,7 @@ def fetch_artist_id(artist):
 
     #grabs just the number from the returned link
     artist_id = artist_id.split('artists/')[1]
-    return artist_id
+    return (artist_id, artist_link.split('/')[-1])
 
 
 def fetch_artist_song_links(artist_id):
@@ -83,7 +115,7 @@ def fetch_artist_song_links(artist_id):
     songs = list()
 
     while True:
-        url = ('{0}?for_artist_page={1}&page={2}'
+        url = ('{0}?for_artist_page={1}&page={2}&pagination=true'
                .format(base, artist_id, current_page))
         song_link_xpath = '//a[@class="song_name work_in_progress   song_link"]/@href'
         song_links = xpath_query_url(url, song_link_xpath)
@@ -100,17 +132,24 @@ def fetch_artist_song_links(artist_id):
 
 
 def fetch_lyrics(song_links, name):
-    #initializes dictionary, populates the keys beforehand to make the 
-    #dictionary thread safe, as adding or deleting keys is not threadsafe
-    #in the CPython implimentation
+    '''
+        initializes dictionary, populates the keys beforehand to make the 
+        dictionary thread safe, as adding or deleting keys is not threadsafe
+        in the default CPython implimentation
+    '''
     lyrics_db = defaultdict(dict)
+
     for link in song_links:
         lyrics_db[link.split('/')[-1].split('-lyrics')[0]]
+
     q = Queue()
-    thread_pool(q, 10, ThreadLyrics, database=lyrics_db)
+    data = {'database': lyrics_db, 'artist': name}
+    thread_pool(q, 10, ThreadLyrics, payload=data)
+
     for link in song_links:
         print(link)
-        q.put(link)
+        q.put((link, name))
+
     q.join()
 
     with open(ap('lyrics/' + name + '.json'), 'wb') as fp:
@@ -120,7 +159,7 @@ def fetch_lyrics(song_links, name):
 
 
 if __name__ == '__main__':
-    name = 'gucci mane'
-    artist_id = fetch_artist_id(name)
+    name = 'woka flocka flame'
+    artist_id, name = fetch_artist_id(name)
     song_links = fetch_artist_song_links(artist_id)
     fetch_lyrics(song_links, name)
