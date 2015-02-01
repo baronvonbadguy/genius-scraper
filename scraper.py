@@ -16,6 +16,7 @@ from collections import defaultdict
 import re
 from hashlib import md5
 import time
+from os import mkdir
 
 
 class ThreadLyrics(Thread):
@@ -301,19 +302,31 @@ def fetch_lyrics(song_links, name):
 
     q.join()
 
+    if not osp.isdir(ap('lyrics')):
+        mkdir(ap('lyrics'))
     with open(ap('lyrics/' + name + '.json'), 'wb') as fp:
         json.dump(lyrics_db, fp, indent=4)
     
     return lyrics_db
 
-def run():
-    if len(sys.argv) > 1:
-        name = sys.argv[1]
-        artist_id, name = fetch_artist_id(name)
-        print('Correct artist name: ' + str(name))
-        print('Artist Identifier: ' + str(artist_id))
-        song_links = fetch_artist_song_links(artist_id)
-        return fetch_lyrics(song_links, name)
+def scrape(artist_name='Gucci mane'):
+    name = artist_name
+    artist_id, name = fetch_artist_id(name)
+    print('Correct artist name: ' + str(name))
+    print('Artist Identifier: ' + str(artist_id))
+    song_links = fetch_artist_song_links(artist_id)
+    return fetch_lyrics(song_links, name)
+
+def scrape_rapper_list():
+    path = ap('rapper-list.json')
+    if osp.isfile(path):
+        artists = json.load(open(path, 'rb'))
+        for artist in artists:
+            scrape(artist_name=artist)
 
 if __name__ == '__main__':
-    db = run()
+    db = dict()
+    if len(sys.argv) > 1:
+        db = scrape(artist_name=sys.argv[1])
+    else:
+        scrape_rapper_list()
