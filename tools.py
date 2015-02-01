@@ -7,7 +7,7 @@ Created on Mon Jan 19 22:05:40 2015
 from os import path as osp
 import sys
 from unicodedata import normalize
-
+import re
 
 def remove_last_word(line):
     return ' '.join(line.split()[:-1])
@@ -19,6 +19,12 @@ def ap(path):
     """
     return osp.join(osp.dirname(osp.abspath(sys.argv[0])), path)
 
+def an(string):
+    '''
+        returns just alphanumeric characters from a string
+    '''
+    pattern = re.compile('[\W_]+')
+    return pattern.sub('', string)
 
 def group_data(data, group_size):
     return [data[x:x+group_size] for x in range(0, len(data), group_size)]
@@ -35,6 +41,7 @@ def thread_pool(q, maxthreads, ThreadClass, payload=None):
         ThreadClass
             Class that extends Thread class to be run
     '''
+    pool = list()
     for x in range(maxthreads):
         if isinstance(payload, dict):
             t = ThreadClass(q, payload)
@@ -42,7 +49,8 @@ def thread_pool(q, maxthreads, ThreadClass, payload=None):
             t = ThreadClass(q)
         t.setDaemon(True)
         t.start()
-
+        pool.append(t)
+    return pool
 
 def enc_str(utf):
     '''
