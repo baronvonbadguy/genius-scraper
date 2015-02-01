@@ -242,31 +242,46 @@ def fetch_artist_id(artist):
 def fetch_artist_song_links(artist_id):
     '''
         Grabs the song titles from the paginating calls to the designated
-        artist page.  The extra headers are so that the server only gives us the
-        paginated song differentials.  
+        artist page.  The extra headers are so that the server only gives us 
+        the resultant song group and no extranious html.
         
-        When you scroll down to the bottom of
-        the songs page in a web browser, it will send a AJAX request to the
-        server to grab a tiny packet of html to insert into the existing results.
-        This emulates that so we can get a much faster response from the server,
-        and reduce data transfer overhead by about 75%.
+        When you scroll down to the bottom of the songs page in a web browser, 
+        it will send a AJAX request to the server to grab a tiny packet of 
+        html to insert into the existing results. This emulates that so we 
+        can get a much faster response from the server, and reduce data 
+        transfer overhead by about 75% per request.
+        
+        Threading this process with a few added constraints makes this even
+        faster, without having to process more than one empty response between
+        all the threads.
+        
+        The reason I do it this way is because I don't know what page number
+        will be the last, and I need all the threads know as soon as I get a
+        blank result, so that no new tasks are added to the queue.
     '''
     songs = list()
     scraping = [True,]
     page = 1
-    qi = Queue(maxsize=20)
+    qi = Queue(maxsize=10)
 
     scrape_data = {'artist_id': artist_id, 'scraping': scraping, 'songs': songs}
     scrape_pool = thread_pool(qi, 10, ThreadPageNameScrape, payload=scrape_data)
+
     print('begin scraping links for lyric pages')
+
     begin = time.time()
     while scraping[0]:
         if qi.not_full:
             qi.put(page)
             page += 1
+
+    #blocks until all extra threads exit, even if there is a leftover task
+    #in the queue
     while threading.activeCount() > 1:
         pass
+
     print('finished scraping in: ' + str(time.time() - begin)[:5] + ' seconds')
+
     return songs
 
 
@@ -292,12 +307,13 @@ def fetch_lyrics(song_links, name):
     return lyrics_db
 
 def run():
-    name = sys.argv[1]
-    artist_id, name = fetch_artist_id(name)
-    print('Correct artist name: ' + str(name))
-    print('Artist Identifier: ' + str(artist_id))
-    song_links = fetch_artist_song_links(artist_id)
-    return fetch_lyrics(song_links, name)
+    if len(sys.argv) > 1:
+        name = sys.argv[1]
+        artist_id, name = fetch_artist_id(name)
+        print('Correct artist name: ' + str(name))
+        print('Artist Identifier: ' + str(artist_id))
+        song_links = fetch_artist_song_links(artist_id)
+        return fetch_lyrics(song_links, name)
 
 if __name__ == '__main__':
     db = run()
