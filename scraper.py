@@ -11,6 +11,7 @@ import threading
 import json
 import re
 import time
+import traceback
 
 from os import mkdir
 from hashlib import md5
@@ -48,6 +49,7 @@ class ThreadLyrics(Thread):
                 regex_match = re.search(regex, block[0])
             except Exception as e:
                 print(e)
+                traceback.print_exc()
             #if primary match was successful and block text is a certain length
             if regex_match and len(block[1]) > length_threshold:
                 #defaults the block artist as a song artist
@@ -82,7 +84,10 @@ class ThreadLyrics(Thread):
         while True:
             #grab a lyrics page link and the unprocessed name of the artist
             link, name_raw, artist_id = self.qi.get()
-            response = rq.get(link)
+            try:            
+                response = rq.get(link)
+            except Exception as e:
+                print(e)
 
             if response.status_code == 200:
                 #im using beautiful soup for this part because its much more
@@ -194,16 +199,12 @@ class ThreadPageNameScrape(Thread):
         while True:
             payload = self.qi.get()
             try:
-                scraping = payload['scraping']
-                artist_id = payload['artist_id']
-                page = payload['page']
+                url = payload['url']
                 name = payload['name']
+                artist_id = payload['artist_id']
             except KeyError as e:
                 print(e)
 
-            base = 'http://genius.com/artists/songs'
-            url = ('{0}?for_artist_page={1}&page={2}&pagination=true'
-                   .format(base, artist_id, page))
             headers = {'Content-Type': 'application/x-www-form-urlencoded',
                        'X-Requested-With': 'XMLHttpRequest'}
 
@@ -212,9 +213,8 @@ class ThreadPageNameScrape(Thread):
 
             if song_links:
                 for song in song_links:
-                    self.qo.put((song, name, artist_id))            
-            else:
-                scraping[0] = False
+                    self.qo.put((song, name, artist_id))
+
             self.qi.task_done()
 
 
@@ -222,13 +222,16 @@ def xpath_query_url(url, xpath_query, payload=dict()):
     headers = {'User-Agent': 'Mozilla/5.0 Gecko/20100101 Firefox/35.0'}
     if payload:
         headers.update(payload)
-    response = rq.get(url, headers=headers)
+    try:
+        response = rq.get(url, headers=headers)
+        #creates an html tree from the data
+        tree = html.fromstring(response.text)
+        #XPATH query to grab all of the artist urls, then we grab the first
+        return tree.xpath(xpath_query)
+    except Exception as e:
+        print(e)
+        return ''
 
-    #creates an html tree from the data
-    tree = html.fromstring(response.text)
-
-    #XPATH query to grab all of the artist urls, then we grab the first
-    return tree.xpath(xpath_query)
 
 class ThreadFetchArtistID(Thread):
     def __init__(self, queue_in, queue_out):
@@ -256,18 +259,21 @@ class ThreadFetchArtistID(Thread):
                     artist_id = artist_id_raw.split('artists/')[1]
                     artist_name_corrected = artist_links[0].split('/')[-1]
                     
-                    scraping = [True,]
-                    page = 1
-                
-                    print('begin scraping links for ' +  artist_name_corrected + ' lyric pages')
                     begin = time.time()
-                    while scraping[0]:
-                        if self.qo.not_full:
-                            self.qo.put({'artist_id': artist_id, 'scraping': scraping, 
-                                    'page': page, 'name': artist_name_corrected})
-                            page += 1
-                            print('added page: ' + str(page))
-                    print('finished scraping ' + artist_name_corrected + ' in: ' + str(time.time() - begin)[:5] + ' seconds')
+                    base = 'http://genius.com'
+                    url = ('{0}/artists/songs?for_artist_page={1}&page=1&pagination=true'
+                           .format(base, artist_id))
+                    headers = {'Content-Type': 'application/x-www-form-urlencoded',
+                               'X-Requested-With': 'XMLHttpRequest'}
+        
+                    page_link_xpath = '//div[@class="pagination"]//a[not(@class)]/@href'
+                    page_links = xpath_query_url(url, page_link_xpath, payload=headers)
+                    if page_links:
+                        for link in page_links:
+                            self.qo.put({'url': (base + link), 
+                                         'artist_id': artist_id, 
+                                         'name': artist_name_corrected})             
+                    print('finished processing links for ' + artist_name_corrected + ' in: ' + str(time.time() - begin)[:5] + ' seconds')
             self.qi.task_done()
 
 class ThreadWrite(Thread):
@@ -288,7 +294,7 @@ class ThreadWrite(Thread):
                     lyrics_db = dict()
                     lyrics_db[song_name] = data
                     json.dump(lyrics_db, fp, indent=4)
-                    print('first write')
+                    print('first write to: ' + name + ' successful')
             else:
                 with open(path, 'r+') as fp:
                     lyrics_db = dict()
@@ -372,8 +378,11 @@ def scrape(artist_names=['Gucci mane']):
 
 def scrape_rapper_list():
     path = ap('rapper-list.json')
+    print(path)
     if osp.isfile(path):
         artists = json.load(open(path, 'r+'))
+        is_file = lambda name: osp.isfile(ap('lyrics/' + str(name) + '.json'))
+        artists = [x for x in artists if not is_file(enc_str(x))]
         scrape(artist_names=artists)
     
     
