@@ -6,20 +6,21 @@ Created on Mon Jan 19 13:23:46 2015
 """
 from __future__ import print_function
 
-import requests as rq
 import json
 import re
 import time
 import traceback
+import Queue
 
 from os import mkdir
 from hashlib import md5
 from collections import defaultdict
-from lxml import html
 from threading import Thread
-import Queue
 
 from tools import *
+
+import requests as rq
+from lxml import html
 
 class ThreadLyrics(Thread):
     def __init__(self, queue_in, queue_out ):
@@ -86,13 +87,16 @@ class ThreadLyrics(Thread):
         while True:
             #grab a lyrics page link and the unprocessed name of the artist
             link, name_raw = self.qi.get()
-            try:            
-                response = rq.get(link)
-            except Exception as e:
-                print(e)
+            attempts = 0
+            while attempts < 3:
+                try:            
+                    response = rq.get(link)
+                    break
+                except Exception as e:
+                    attempts += 1
+                    print(e)
 
             if response.status_code == 200:
-                
                 tree = html.fromstring(response.text)
                 xpath_query = '//div[@class="lyrics"]//text()'
                 results = tree.xpath(xpath_query)
@@ -299,16 +303,19 @@ class ThreadFetchArtistID(Thread):
                     
                     begin = time.time()
                     base = 'http://genius.com'
-                    url = ('{0}/artists/songs?for_artist_page={1}&page=1&pagination=true'
+                    url = ('{}/artists/songs?for_artist_page={}&page=1&pagination=true'
                            .format(base, artist_id))
                     headers = {'Content-Type': 'application/x-www-form-urlencoded',
                                'X-Requested-With': 'XMLHttpRequest'}
         
-                    page_link_xpath = '//div[@class="pagination"]//a[not(@class)]/@href'
-                    page_links = xpath_query_url(url, page_link_xpath, payload=headers)
-                    if page_links:
-                        for link in page_links:
-                            self.qo.put({'url': (base + link), 
+                    page_link_xpath = '//div[@class="pagination"]//a[not(@class)]/text()'
+                    page_nums = xpath_query_url(url, page_link_xpath, payload=headers)
+                    if page_nums:
+                        page_last = max([int(pagenum) for pagenum in page_nums])
+                        for page in range(page_last + 1):
+                            url = ('{}/artists/songs?for_artist_page={}&page={}&pagination=true'
+                                    .format(base, artist_id, page))
+                            self.qo.put({'url': (url), 
                                          'name': artist_name_corrected})             
                     print('finished processing links for ' + artist_name_corrected + ' in: ' + str(time.time() - begin)[:5] + ' seconds')
             self.qi.task_done()
