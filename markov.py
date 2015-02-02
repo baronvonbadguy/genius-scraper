@@ -8,8 +8,6 @@ Created on Fri Jan 23 00:49:33 2015
 import re
 from collections import defaultdict
 import random as rnd
-import scraper
-import nltk
 
 def get_next_word(model, word):
     return rnd.choice(model[word])
