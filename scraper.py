@@ -7,7 +7,6 @@ Created on Mon Jan 19 13:23:46 2015
 from __future__ import print_function
 
 import requests as rq
-import threading
 import json
 import re
 import time
@@ -19,8 +18,6 @@ from collections import defaultdict
 from lxml import html
 from threading import Thread
 import Queue
-from bs4 import BeautifulSoup as bs
-from tqdm import tqdm
 
 from tools import *
 
@@ -58,6 +55,11 @@ class ThreadLyrics(Thread):
                 for feature in features:
                     if re.search(an(feature).lower(), an(block[0]).lower()):
                         artist = feature
+                if artist == song_artist:
+                    if re.search(':', block[0]):
+                        stripped = block[0].split(':')[-1].replace(']', '').strip()
+                        if stripped:
+                            artist = stripped
 
                 #using a hash to compare text blocks
                 text_hash = md5(enc_str(block[1])).hexdigest()
@@ -83,36 +85,39 @@ class ThreadLyrics(Thread):
     def run(self):
         while True:
             #grab a lyrics page link and the unprocessed name of the artist
-            link, name_raw, artist_id = self.qi.get()
+            link, name_raw = self.qi.get()
             try:            
                 response = rq.get(link)
             except Exception as e:
                 print(e)
 
             if response.status_code == 200:
-                #im using beautiful soup for this part because its much more
-                #convenient to grab all of the text below the chain of a
-                #specific object than lxml even if it's slower.
-                soup = bs(response.text)
-                soup_results = soup.find('div', class_='lyrics')
+                
+                tree = html.fromstring(response.text)
+                xpath_query = '//div[@class="lyrics"]//text()'
+                results = tree.xpath(xpath_query)
 
-                if soup_results:
+                if len(results) > 10:
                     #raw lyrics text
-                    lyrics = soup_results.text
+                    lyrics = ''.join(results)
                     #grab the song name and artist name
-                    song_name = soup.find('span', class_='text_title').text.strip()
-                    name = soup.find('span', class_='text_artist').a.text.strip()
-
-                    #search for group objects, then return all elements if found
-                    ft_group = soup.find('span', class_='featured_artists')
-                    features, producers = [], []
+                    xq = '//span[@class="text_title"]/text()'
+                    try:
+                        song_name = tree.xpath(xq)[0].strip()
+                    except Exception as e:
+                        print(e)
+                    xq = '//span[@class="text_artist"]/a/text()'
+                    try:
+                        name = tree.xpath(xq)[0].strip()
+                    except Exception as e:
+                        print(e)
  
-                    if ft_group:
-                        features = [ft.text.strip() for ft in ft_group.find_all('a')]
+                    #search for group objects, then return all elements if found
+                    ft_group = tree.xpath('//span[@class="featured_artists"]//a/text()')
+                    pr_group = tree.xpath('//span[@class="producer_artists"]//a/text()')
 
-                    pr_group = soup.find('span', class_='producer_artists')
-                    if pr_group:
-                        producers = [pr.text.strip() for pr in pr_group.find_all('a')]
+                    features = [ft.strip() for ft in ft_group]
+                    producers = [pr.strip() for pr in pr_group]
      
                     #dictionary to store all of out raw and processed lyrics data
                     block_dict = {'raw': lyrics, 'pro': dict()}
@@ -184,7 +189,7 @@ class ThreadLyrics(Thread):
                     print('processed lyrics: ' + song_name)
                     self.qo.put((block_dict, song_name, name))
             else:
-                print(song_name + ' download failed')
+                print(song_name + ' download failed or aborted')
             #print(song_name + ' task completed')
             self.qi.task_done()
 
@@ -201,7 +206,6 @@ class ThreadPageNameScrape(Thread):
             try:
                 url = payload['url']
                 name = payload['name']
-                artist_id = payload['artist_id']
             except KeyError as e:
                 print(e)
 
@@ -213,7 +217,7 @@ class ThreadPageNameScrape(Thread):
 
             if song_links:
                 for song in song_links:
-                    self.qo.put((song, name, artist_id))
+                    self.qo.put((song, name))
 
             self.qi.task_done()
 
@@ -232,6 +236,40 @@ def xpath_query_url(url, xpath_query, payload=dict()):
         print(e)
         return ''
 
+
+def fetch_verified():
+    q = Queue.Queue(maxsize=10)
+    pool = thread_pool(q, 10, ThreadFetchVerifiedArtists)
+    artists = list()
+    page_limit = 222
+    for page in range(page_limit):
+        q.put((page, artists))
+        print('added page: {}/{} into the queue'.format(page, page_limit),
+              end='\r')
+    
+    q.join()
+    del pool
+    
+    return artists
+
+class ThreadFetchVerifiedArtists(Thread):
+    def __init__(self, queue_in):
+        Thread.__init__(self)
+        self.qi = queue_in
+    
+    def run(self):
+        while True:
+            base = 'http://genius.com/verified-artists?page='
+            query = '//div[@class="user_details"]/a/text()'
+            page, artists = self.qi.get()
+            try:
+                results = xpath_query_url(base + str(page), query)
+            except Exception as e:
+                print(e)
+            if results:
+                for artist in results:
+                    artists.append(artist)
+            self.qi.task_done()
 
 class ThreadFetchArtistID(Thread):
     def __init__(self, queue_in, queue_out):
@@ -271,7 +309,6 @@ class ThreadFetchArtistID(Thread):
                     if page_links:
                         for link in page_links:
                             self.qo.put({'url': (base + link), 
-                                         'artist_id': artist_id, 
                                          'name': artist_name_corrected})             
                     print('finished processing links for ' + artist_name_corrected + ' in: ' + str(time.time() - begin)[:5] + ' seconds')
             self.qi.task_done()
@@ -319,14 +356,6 @@ def fetch_artist_song_links(artist_id, name, qi):
         html to insert into the existing results. This emulates that so we 
         can get a much faster response from the server, and reduce data 
         transfer overhead by about 75% per request.
-        
-        Threading this process with a few added constraints makes this even
-        faster, without having to process more than one empty response between
-        all the threads.
-        
-        The reason I do it this way is because I don't know what page number
-        will be the last, and I need all the threads know as soon as I get a
-        blank result, so that no new tasks are added to the queue.
     '''
     
 
@@ -374,7 +403,6 @@ def scrape(artist_names=['Gucci mane']):
     q_write.join()
     del pool_write
     print('finished writing lyrics')
-        
 
 def scrape_rapper_list():
     path = ap('rapper-list.json')
@@ -388,6 +416,6 @@ def scrape_rapper_list():
     
 if __name__ == '__main__':
     if len(sys.argv) > 1:
-        scrape(artist_names=sys.argv[1])
+        scrape(artist_names=[sys.argv[1]])
     else:
         scrape_rapper_list()
