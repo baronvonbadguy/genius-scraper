@@ -4,26 +4,30 @@ Created on Mon Jan 19 13:23:46 2015
 
 @author: sunshine
 """
-from bs4 import BeautifulSoup as bs
+from __future__ import print_function
+
 import requests as rq
+import threading
+import json
+import re
+import time
+
+from os import mkdir
+from hashlib import md5
+from collections import defaultdict
 from lxml import html
 from threading import Thread
-import threading
-from Queue import Queue
-from tools import *
-import json
-from collections import defaultdict
-import re
-from hashlib import md5
-import time
-from os import mkdir
+import Queue
+from bs4 import BeautifulSoup as bs
+from tqdm import tqdm
 
+from tools import *
 
 class ThreadLyrics(Thread):
-    def __init__(self, queue, payload):
+    def __init__(self, queue_in, queue_out ):
         Thread.__init__(self)
-        self.q = queue
-        self.db = payload['database']
+        self.qi = queue_in
+        self.qo = queue_out
 
     def regex_blocks(self, regex, blocks, song_artist, features):
         '''
@@ -77,7 +81,7 @@ class ThreadLyrics(Thread):
     def run(self):
         while True:
             #grab a lyrics page link and the unprocessed name of the artist
-            link, name_raw = self.q.get()
+            link, name_raw, artist_id = self.qi.get()
             response = rq.get(link)
 
             if response.status_code == 200:
@@ -172,41 +176,46 @@ class ThreadLyrics(Thread):
                         block_dict['pro']['features'] = features
                     if producers:
                         block_dict['pro']['producers'] = producers
-                    print('finished: ' + song_name)
-                    self.db[song_name] = block_dict
+                    print('processed lyrics: ' + song_name)
+                    self.qo.put((block_dict, song_name, name))
             else:
                 print(song_name + ' download failed')
             #print(song_name + ' task completed')
-            self.q.task_done()
+            self.qi.task_done()
 
 
 class ThreadPageNameScrape(Thread):
-    def __init__(self, queue, payload):
+    def __init__(self, queue_in, queue_out):
         Thread.__init__(self)
-        self.qi = queue
-        self.scraping = payload['scraping']
-        self.artist_id = payload['artist_id']
-        self.songs = payload['songs']
+        self.qi = queue_in
+        self.qo = queue_out
 
     def run(self):
         while True:
-            page = self.qi.get()
+            payload = self.qi.get()
+            try:
+                scraping = payload['scraping']
+                artist_id = payload['artist_id']
+                page = payload['page']
+                name = payload['name']
+            except KeyError as e:
+                print(e)
+
             base = 'http://genius.com/artists/songs'
             url = ('{0}?for_artist_page={1}&page={2}&pagination=true'
-                   .format(base, self.artist_id, page))
+                   .format(base, artist_id, page))
             headers = {'Content-Type': 'application/x-www-form-urlencoded',
                        'X-Requested-With': 'XMLHttpRequest'}
+
             song_link_xpath = '//a[@class="song_name work_in_progress   song_link"]/@href'
             song_links = xpath_query_url(url, song_link_xpath, payload=headers)
 
-            self.qi.task_done()
             if song_links:
                 for song in song_links:
-                    self.songs.append(song)            
+                    self.qo.put((song, name, artist_id))            
             else:
-                if self.scraping[0]:
-                    self.scraping[0] = False
-                break
+                scraping[0] = False
+            self.qi.task_done()
 
 
 def xpath_query_url(url, xpath_query, payload=dict()):
@@ -221,26 +230,79 @@ def xpath_query_url(url, xpath_query, payload=dict()):
     #XPATH query to grab all of the artist urls, then we grab the first
     return tree.xpath(xpath_query)
 
+class ThreadFetchArtistID(Thread):
+    def __init__(self, queue_in, queue_out):
+        Thread.__init__(self)
+        self.qi = queue_in
+        self.qo = queue_out
+    def run(self):
+        while True:
+            artist = self.qi.get()
+            #lets grab some page data so we can get the official artist name
+            url = 'http://genius.com/search/artists?q='
+            artist_term = artist.replace(' ', '-')
+            artist_link_xpath = '//li/a[@class="artist_link"]/@href'
+        
+            #gonna grab all of the links and take the first result
+            artist_links = xpath_query_url(url + artist_term, artist_link_xpath)
+            if artist_links:
+                #now that we have the artist link we're going to try to get the artist ID
+                artist_id_xpath = '//meta[@property="twitter:app:url:iphone"]/@content'
+                artist_id_list = xpath_query_url(artist_links[0], artist_id_xpath)
+                artist_id_raw = ''
+                if artist_id_list:
+                    artist_id_raw = artist_id_list[0]
+                    #grabs just the number from the returned link
+                    artist_id = artist_id_raw.split('artists/')[1]
+                    artist_name_corrected = artist_links[0].split('/')[-1]
+                    
+                    scraping = [True,]
+                    page = 1
+                
+                    print('begin scraping links for ' +  artist_name_corrected + ' lyric pages')
+                    begin = time.time()
+                    while scraping[0]:
+                        if self.qo.not_full:
+                            self.qo.put({'artist_id': artist_id, 'scraping': scraping, 
+                                    'page': page, 'name': artist_name_corrected})
+                            page += 1
+                            print('added page: ' + str(page))
+                    print('finished scraping ' + artist_name_corrected + ' in: ' + str(time.time() - begin)[:5] + ' seconds')
+            self.qi.task_done()
 
-def fetch_artist_id(artist):
-    #lets grab some page data so we can get the official artist name
-    url = 'http://genius.com/search/artists?q='
-    artist_term = artist.replace(' ', '-')
-    artist_link_xpath = '//li/a[@class="artist_link"]/@href'
+class ThreadWrite(Thread):
+    def __init__(self, queue_in):
+        Thread.__init__(self)
+        self.qi = queue_in
 
-    #gonna grab all of the links and take the first result
-    artist_link = xpath_query_url(url + artist_term, artist_link_xpath)[0]
+    def run(self):
+        while True:
+            data, song_name, name = self.qi.get()
+ 
+            if not osp.isdir(ap('lyrics')):
+                mkdir(ap('lyrics'))
 
-    #now that we have the artist link we're going to try to get the artist ID
-    artist_id_xpath = '//meta[@property="twitter:app:url:iphone"]/@content'
-    artist_id = xpath_query_url(artist_link, artist_id_xpath)[0]
+            path = ap('lyrics/' + name + '.json')
+            if not osp.isfile(path):          
+                with open(path, 'w+') as fp:
+                    lyrics_db = dict()
+                    lyrics_db[song_name] = data
+                    json.dump(lyrics_db, fp, indent=4)
+                    print('first write')
+            else:
+                with open(path, 'r+') as fp:
+                    lyrics_db = dict()
+                    lyrics_db[song_name] = data
+                    jsondata = json.dumps(lyrics_db, indent=4)[2:-1]
+                    fp.seek(-2, 2)
+                    fp.write(',\n')
+                    fp.write(jsondata)
+                    fp.write('}')
 
-    #grabs just the number from the returned link
-    artist_id = artist_id.split('artists/')[1]
-    return (artist_id, artist_link.split('/')[-1])
+            self.qi.task_done()
 
 
-def fetch_artist_song_links(artist_id):
+def fetch_artist_song_links(artist_id, name, qi):
     '''
         Grabs the song titles from the paginating calls to the designated
         artist page.  The extra headers are so that the server only gives us 
@@ -260,73 +322,63 @@ def fetch_artist_song_links(artist_id):
         will be the last, and I need all the threads know as soon as I get a
         blank result, so that no new tasks are added to the queue.
     '''
-    songs = list()
-    scraping = [True,]
-    page = 1
-    qi = Queue(maxsize=10)
-
-    scrape_data = {'artist_id': artist_id, 'scraping': scraping, 'songs': songs}
-    scrape_pool = thread_pool(qi, 10, ThreadPageNameScrape, payload=scrape_data)
-
-    print('begin scraping links for lyric pages')
-
-    begin = time.time()
-    while scraping[0]:
-        if qi.not_full:
-            qi.put(page)
-            page += 1
-
-    #blocks until all extra threads exit, even if there is a leftover task
-    #in the queue
-    while threading.activeCount() > 1:
-        pass
-
-    print('finished scraping in: ' + str(time.time() - begin)[:5] + ' seconds')
-
-    return songs
+    
 
 
-def fetch_lyrics(song_links, name):
+def fetch_lyrics(song_link, name, qi):
     '''
         None of the threads access the same entries at any point in time so
         there aren't any concurrency issues to deal with
     '''
-    lyrics_db = defaultdict(dict)
+    lyrics_db = defaultdict(defaultdict(dict))
 
-    q = Queue()
-    data = {'database': lyrics_db, 'artist': name}
-    thread_pool(q, 10, ThreadLyrics, payload=data)
-
-    for link in song_links:
-        q.put((link, name))
-
-    q.join()
+    qi.put((link, name, artist_id))
 
     if not osp.isdir(ap('lyrics')):
         mkdir(ap('lyrics'))
-    with open(ap('lyrics/' + name + '.json'), 'wb') as fp:
+    with open(ap('lyrics/' + name + '.json'), 'r+') as fp:
         json.dump(lyrics_db, fp, indent=4)
-    
-    return lyrics_db
 
-def scrape(artist_name='Gucci mane'):
-    name = artist_name
-    artist_id, name = fetch_artist_id(name)
-    print('Correct artist name: ' + str(name))
-    print('Artist Identifier: ' + str(artist_id))
-    song_links = fetch_artist_song_links(artist_id)
-    return fetch_lyrics(song_links, name)
+def scrape(artist_names=['Gucci mane']):
+    q_id = Queue.Queue()
+    q_links = Queue.Queue(maxsize=10)
+    q_lyrics = Queue.Queue()
+    q_write = Queue.Queue()
+    
+    pool_id = thread_pool(q_id, 10, ThreadFetchArtistID, qo=q_links)
+    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics)
+    pool_lyrics = thread_pool(q_lyrics, 10, ThreadLyrics, qo=q_write)
+    pool_write = thread_pool(q_write, 1, ThreadWrite)
+    
+    for artist in artist_names:
+        q_id.put(artist)
+
+    q_id.join()
+    del pool_id
+    print('finished fetching artist IDs')
+
+    q_links.join()
+    del pool_links
+    print('finished fetching song links')
+
+    q_lyrics.join()
+    del pool_lyrics
+    print('finished fetching lyrics')
+
+    q_write.join()
+    del pool_write
+    print('finished writing lyrics')
+        
 
 def scrape_rapper_list():
     path = ap('rapper-list.json')
     if osp.isfile(path):
-        artists = json.load(open(path, 'rb'))
-        for artist in artists:
-            scrape(artist_name=artist)
-
+        artists = json.load(open(path, 'r+'))
+        scrape(artist_names=artists)
+    
+    
 if __name__ == '__main__':
-    db = dict()
     if len(sys.argv) > 1:
-        db = scrape(artist_name=sys.argv[1])
+        scrape(artist_names=sys.argv[1])
     else:
         scrape_rapper_list()

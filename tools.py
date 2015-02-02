@@ -8,6 +8,7 @@ from os import path as osp
 import sys
 from unicodedata import normalize
 import re
+import Queue
 
 def remove_last_word(line):
     return ' '.join(line.split()[:-1])
@@ -30,7 +31,7 @@ def group_data(data, group_size):
     return [data[x:x+group_size] for x in range(0, len(data), group_size)]
 
 
-def thread_pool(q, maxthreads, ThreadClass, payload=None):
+def thread_pool(q, maxthreads, ThreadClass, qo=None):
     '''
         Populates a threadpool in the given queue with the passed class.
 
@@ -43,13 +44,16 @@ def thread_pool(q, maxthreads, ThreadClass, payload=None):
     '''
     pool = list()
     for x in range(maxthreads):
-        if isinstance(payload, dict):
-            t = ThreadClass(q, payload)
+        if isinstance(qo, Queue.Queue):
+            t = ThreadClass(q, qo)
         else:
             t = ThreadClass(q)
-        t.setDaemon(True)
-        t.start()
-        pool.append(t)
+        try:
+            t.setDaemon(True)
+            t.start()
+            pool.append(t)
+        except AttributeError as e:
+            print(e)
     return pool
 
 def enc_str(utf):
