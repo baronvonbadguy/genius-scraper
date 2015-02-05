@@ -300,7 +300,7 @@ class ThreadLyrics(Thread):
                         block_dict['pro']['features'] = features
                     if producers:
                         block_dict['pro']['producers'] = producers
-                    print('processed lyrics: ' + song_name)
+                    #print('processed lyrics: ' + song_name)
                     self.qo.put((block_dict, song_name, name))
             else:
                 print(song_name + ' download failed or aborted')
