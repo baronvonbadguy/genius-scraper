@@ -12,25 +12,26 @@ from os import mkdir
 from hashlib import md5
 from tools import *
 
-class ThreadFetchVerifiedArtists(Thread):
+class ThreadFetchHotArtists(Thread):
     def __init__(self, queue_in):
         Thread.__init__(self)
         self.qi = queue_in
     
     def run(self):
         while True:
-            base = 'http://genius.com/verified-artists?page='
-            query = '//div[@class="user_details"]/a/text()'
+            base = 'http://www.hotnewhiphop.com/artists/all/'
+            query = '//span[@itemprop="name"]/a/@title'
             page, artists = self.qi.get()
             try:
                 results = xpath_query_url(base + str(page), query)
             except Exception as e:
                 print(e)
             if results:
-                for artist in results:
-                    artists.append(artist)
+                artists[page] = results
             self.qi.task_done()
-
+            
+    
+            
 class ThreadFetchArtistID(Thread):
     def __init__(self, queue_in, queue_out):
         Thread.__init__(self)
@@ -168,15 +169,8 @@ class ThreadLyrics(Thread):
                 for feature in features:
                     if re.search(an(feature).lower(), an(block[0]).lower()):
                         artist = feature
-                #if that didn't work, and there is a colon in the block header
-                #we grab it and use that for the artist
-                if artist == song_artist:
-                    if re.search(':', block[0]):
-                        stripped = block[0].split(':')[-1].replace(']', '').strip()
-                        if stripped:
-                            artist = stripped
 
-                #using a hash to compare text blocks
+                #using a hash to key text blocks
                 text_hash = md5(enc_str(block[1])).hexdigest()
 
                 block_dict = {'header': block[0], 'text': block[1],

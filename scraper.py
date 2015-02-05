@@ -8,26 +8,30 @@ from __future__ import print_function
 
 import json
 import Queue
+from re import search
 
 from tools import *
 from classes import *
 
-
-def fetch_verified():
-    '''Fetches verified artists from Genius, not exclusive to Rap.Genius'''
+    
+def fetch_hot_artists(page_limit=10):
+    '''Fetches top artists from hotnewhiphop.com'''
     q = Queue.Queue(maxsize=10)
-    pool = thread_pool(q, 10, ThreadFetchVerifiedArtists)
-    artists = list()
-    page_limit = 222
+    pool = thread_pool(q, 10, ThreadFetchHotArtists)
+    artists = dict()
 
     for page in range(page_limit):
         q.put((page, artists))
-        print('added page: {}/{} of verified artists into the queue for download'.format(page, page_limit),
+        print('added page: {}/{} of hot artists into the queue for download'.format(page, page_limit),
               end='\r')    
     q.join()
     del pool
     
-    return artists
+    cleaned = list()
+    for page in range(len(artists)):
+        cleaned += artists[page]
+    cleaned = [artist for artist in cleaned if not search('&amp', artist)]
+    return cleaned
 
 def scrape(artist_names=['Gucci mane']):
     q_id = Queue.Queue()
@@ -58,20 +62,8 @@ def scrape(artist_names=['Gucci mane']):
     q_write.join()
     del pool_write
     print('finished writing lyrics')
-
-
-def scrape_rapper_list():
-    path = ap('rapper-list.json')
-    print(path)
-    if osp.isfile(path):
-        artists = json.load(open(path, 'r+'))
-        is_file = lambda name: osp.isfile(ap('lyrics/' + str(name) + '.json'))
-        artists = [x for x in artists if not is_file(enc_str(x))]
-        scrape(artist_names=artists)
     
     
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         scrape(artist_names=[sys.argv[1]])
-    else:
-        scrape_rapper_list()
