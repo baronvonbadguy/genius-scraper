@@ -22,33 +22,11 @@ def fetch_verified():
 
     for page in range(page_limit):
         q.put((page, artists))
-        print('added page: {}/{} into the queue'.format(page, page_limit),
+        print('added page: {}/{} of verified artists into the queue for download'.format(page, page_limit),
               end='\r')    
     q.join()
     del pool
     
-    return artists
-
-def match_verified_rappers(write=False, verified=[]):
-    
-    if verified:
-        verified_artists = verified
-    else:
-        with open('verified.json', 'r') as f:
-            verified_artists = json.load(f)
-
-    with open('wiki-list.json', 'r') as f:
-        wiki_artists = json.load(f)
-
-    v_set = {enc_str(v.lower()) for v in verified_artists}
-    w_set = {enc_str(w.lower()) for w in wiki_artists}
-
-    artists = set.intersection(v_set, w_set)
-
-    if write:
-        with open('rapper-list.json', 'r+') as f:
-            json.dump(list(artists), f)
-
     return artists
 
 def scrape(artist_names=['Gucci mane']):
@@ -80,6 +58,7 @@ def scrape(artist_names=['Gucci mane']):
     q_write.join()
     del pool_write
     print('finished writing lyrics')
+
 
 def scrape_rapper_list():
     path = ap('rapper-list.json')

@@ -125,8 +125,10 @@ class ThreadLyrics(Thread):
         The main steps are as follows.  Grab a lyric url from the queue and 
         make a GET request.  Find the lyric html block, and resolve all nested
         text elements.  Grab metadata like featured artists/producers, song 
-        name.  Resolve lyrical "blocks" (like verses or hooks) using a regex
-        search.  If no blocks are resolved, try a more liberal search.
+        name from elsewhere in response.  Resolve lyrical "blocks", which are 
+        like verses or hooks, using a regex search.  
+        
+        If no blocks are resolved, try a more liberal search.
         Tag and categorize the blocks based on type (verse/hook/intro etc.)
         using the regex_blocks function.  Pair the raw lyrical text with 
         the processed blocks and metadata.  Send composite dictionary object 
@@ -285,10 +287,10 @@ class ThreadLyrics(Thread):
                     bridge = artist_regex('[bB]ridge')
                     verses = artist_regex('[vV]erse|' + names_regex)
     
-                    #match all regex, just to format the raw remainders
+                    #catch-all regex, just to format the raw remainder blocks
                     remainders = artist_regex('([\w\W\n]*?)')
 
-                    #primary entries we need to add even if empty
+                    #primary entries that we need to add even if empty
                     block_dict['pro']['order'] = block_order
                     block_dict['pro']['blocks'] = {'hooks': hooks, 'verses': verses}
                     block_dict['pro']['artist'] = name
