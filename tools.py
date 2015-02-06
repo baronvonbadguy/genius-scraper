@@ -53,7 +53,7 @@ def group_data(data, group_size):
     return [data[x:x+group_size] for x in range(0, len(data), group_size)]
 
 
-def thread_pool(q, maxthreads, ThreadClass, qo=None):
+def thread_pool(q, maxthreads, ThreadClass, qo=None, payload=None):
     '''
         Populates a threadpool in the given queue with the passed class.
 
@@ -67,9 +67,15 @@ def thread_pool(q, maxthreads, ThreadClass, qo=None):
     pool = list()
     for x in range(maxthreads):
         if isinstance(qo, Queue.Queue):
-            t = ThreadClass(q, qo)
+            if payload:
+                t = ThreadClass(q, qo, payload=payload)
+            else:
+                t = ThreadClass(q, qo)
         else:
-            t = ThreadClass(q)
+            if payload:
+                t = ThreadClass(q, payload=payload)
+            else:
+                t = ThreadClass(q)
         try:
             t.setDaemon(True)
             t.start()

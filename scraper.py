@@ -8,6 +8,9 @@ from __future__ import print_function
 
 import Queue
 from re import search
+import os
+import os.path as osp
+import json
 
 from tools import *
 from classes import *
@@ -32,16 +35,18 @@ def fetch_hot_artists(page_limit=10):
     cleaned = [artist for artist in cleaned if not search('&amp', artist)]
     return cleaned
 
-def scrape(artist_names=['Gucci mane']):
+def scrape(artist_names=['Gucci mane'], updating=False):
     q_id = Queue.Queue()
     q_links = Queue.Queue(maxsize=10)
     q_lyrics = Queue.Queue()
     q_write = Queue.Queue()
     
     pool_id = thread_pool(q_id, 10, ThreadFetchArtistID, qo=q_links)
-    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics)
+    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics, 
+                             payload={'skip_links': already_downloaded()})
     pool_lyrics = thread_pool(q_lyrics, 10, ThreadLyrics, qo=q_write)
-    pool_write = thread_pool(q_write, 1, ThreadWrite)
+    pool_write = thread_pool(q_write, 1, ThreadWrite, 
+                             payload={'updating': updating})
     
     for artist in artist_names:
         q_id.put(artist)
@@ -61,10 +66,22 @@ def scrape(artist_names=['Gucci mane']):
     q_write.join()
     del pool_write
     print('finished writing lyrics')
-    
-    
+
+def already_downloaded():
+    links = set()
+    for fp in os.listdir(ap('lyrics/')):
+        ab_fp = ap('lyrics/' + fp)
+        if osp.isfile(ab_fp):
+            with open(ab_fp, 'r') as f:
+                artist = json.load(f)
+                links = links.union(set(artist.keys()))
+    return links
+                    
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 3:
+        if '-u' in sys.argv[2]:
+            scrape(artist_names=fetch_hot_artists()[:50], updating=True)
+    elif len(sys.argv) == 2:
         scrape(artist_names=[sys.argv[1]])
     else:
         scrape(artist_names=fetch_hot_artists()[:50])

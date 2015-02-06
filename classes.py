@@ -91,10 +91,11 @@ class ThreadPageNameScrape(Thread):
         75% per request.  It's not a huge deal, but I'll take optimizations
         where I can get them.
     '''
-    def __init__(self, queue_in, queue_out):
+    def __init__(self, queue_in, queue_out, payload):
         Thread.__init__(self)
         self.qi = queue_in
         self.qo = queue_out
+        self.skip_links = payload['skip_links']
 
     def run(self):
         while True:
@@ -113,7 +114,8 @@ class ThreadPageNameScrape(Thread):
 
             if song_links:
                 for song in song_links:
-                    self.qo.put((song, name))
+                    if song not in self.skip_links:
+                        self.qo.put((song, name))
 
             self.qi.task_done()
 
@@ -234,7 +236,7 @@ class ThreadLyrics(Thread):
                     producers = [pr.strip() for pr in pr_group]
      
                     #dictionary to store all of out raw and processed lyrics data
-                    block_dict = {'raw': lyrics, 'pro': dict()}
+                    block_dict = {'link': link, 'raw': lyrics, 'pro': dict()}
     
                     #regex to parse block header order, block headers look like 
                     #'[ Verse 1: Gucci Mane ]' or '[Hook]'
@@ -308,9 +310,10 @@ class ThreadLyrics(Thread):
             self.qi.task_done()
 
 class ThreadWrite(Thread):
-    def __init__(self, queue_in):
+    def __init__(self, queue_in, payload):
         Thread.__init__(self)
         self.qi = queue_in
+        self.updating = payload['updating']
 
     def run(self):
         while True:
@@ -330,16 +333,24 @@ class ThreadWrite(Thread):
                     except Exception as e:
                         print(e)
             else:
-                with open(path, 'rb+') as f:
-                    try:
-                        lyrics_db = dict()
-                        lyrics_db[song_name] = data
-                        jsondata = json.dumps(lyrics_db, indent=4)[2:-1]
-                        f.seek(-2, 2)
-                        f.write(',\n')
-                        f.write(jsondata)
-                        f.write('}')
-                    except Exception as e:
-                        print(e)
+                with open(path, 'r+') as f:
+                    if self.updating:
+                        try:
+                            lyrics_db = json.load(f)
+                            lyrics_db[song_name] = data
+                            json.dump(f, indent=4)
+                        except Exception as e:
+                            print(e)
+                    else:
+                        try:
+                            lyrics_db = dict()
+                            lyrics_db[song_name] = data
+                            jsondata = json.dumps(lyrics_db, indent=4)[2:-1]
+                            f.seek(-2, 2)
+                            f.write(',\n')
+                            f.write(jsondata)
+                            f.write('}')
+                        except Exception as e:
+                            print(e)
 
             self.qi.task_done()
