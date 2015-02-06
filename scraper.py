@@ -6,7 +6,6 @@ Created on Mon Jan 19 13:23:46 2015
 """
 from __future__ import print_function
 
-import json
 import Queue
 from re import search
 
@@ -67,3 +66,5 @@ def scrape(artist_names=['Gucci mane']):
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         scrape(artist_names=[sys.argv[1]])
+    else:
+        scrape(artist_names=fetch_hot_artists()[:50])
