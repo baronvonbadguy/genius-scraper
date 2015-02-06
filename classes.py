@@ -159,7 +159,7 @@ class ThreadLyrics(Thread):
             regex_match = ''
             #main regex match for specified match
             try:
-                regex_match = re.search(strip_punc(regex), strip_punc(block[0]))
+                regex_match = re.search(regex, strip_punc(block[0]))
             except Exception as e:
                 print(e)
                 traceback.print_exc()
@@ -203,6 +203,7 @@ class ThreadLyrics(Thread):
                 except Exception as e:
                     attempts += 1
                     print(e)
+                    traceback.print_exc()
 
             if response.status_code == 200:
                 tree = html.fromstring(response.text)
@@ -221,12 +222,14 @@ class ThreadLyrics(Thread):
                         song_name = tree.xpath(xq)[0].strip()
                     except Exception as e:
                         print(e)
+                        traceback.print_exc()
 
                     xq = '//span[@class="text_artist"]/a/text()'
                     try:
                         name = tree.xpath(xq)[0].strip()
                     except Exception as e:
                         print(e)
+                        traceback.print_exc()
  
                     #search for group objects, then return all elements if found
                     ft_group = tree.xpath('//span[@class="featured_artists"]//a/text()')
@@ -293,18 +296,18 @@ class ThreadLyrics(Thread):
                     block_dict['pro']['artist'] = name
                     
                     #these are non essential entries to add if they exist
-                    if intro:
-                        outro['pro']['blocks']['outro'] = outro
+                    if outro:
+                        block_dict['pro']['blocks']['outro'] = outro
                     if intro:
                         block_dict['pro']['blocks']['intro'] = intro
-                    if remainders:
-                        block_dict['pro']['blocks']['remainders'] = remainders
                     if bridge:
                         block_dict['pro']['blocks']['bridge'] = bridge
                     if features:
                         block_dict['pro']['features'] = features
                     if producers:
                         block_dict['pro']['producers'] = producers
+                    if remainders:
+                        block_dict['pro']['blocks']['remainders'] = remainders
                     #print('processed lyrics: ' + song_name)
                     self.qo.put((block_dict, song_name, name))
             else:
@@ -335,6 +338,7 @@ class ThreadWrite(Thread):
                         print('first write to: ' + name + ' successful')
                     except Exception as e:
                         print(e)
+                        traceback.print_exc()
             else:
                 with open(path, 'r+') as f:
                     if self.updating:
@@ -344,6 +348,7 @@ class ThreadWrite(Thread):
                             json.dump(f, indent=4)
                         except Exception as e:
                             print(e)
+                            traceback.print_exc()
                     else:
                         try:
                             lyrics_db = dict()
@@ -355,5 +360,6 @@ class ThreadWrite(Thread):
                             f.write('}')
                         except Exception as e:
                             print(e)
+                            traceback.print_exc()
 
             self.qi.task_done()
