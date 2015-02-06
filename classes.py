@@ -114,7 +114,7 @@ class ThreadPageNameScrape(Thread):
 
             if song_links:
                 for song in song_links:
-                    if song not in self.skip_links:
+                    if song not in self.skip_links and re.search('lyrics$', song):
                         self.qo.put((song, name))
 
             self.qi.task_done()
@@ -151,9 +151,9 @@ class ThreadLyrics(Thread):
         artist = None
         formatted_blocks = list()
         del_indeces = list()
-        #arbitrary threshold for the amount of characters in the block text
+        #arbitrary threshold for the amount of words in the block text
         #until it's considered a match
-        length_threshold = 8
+        length_threshold = 10
 
         for i, block in enumerate(blocks):
             regex_match = ''
@@ -164,7 +164,7 @@ class ThreadLyrics(Thread):
                 print(e)
                 traceback.print_exc()
             #if primary match was successful and block text is a certain length
-            if regex_match and len(block[1]) > length_threshold:
+            if regex_match and len(block[1].split()) > length_threshold:
                 #defaults the block artist as a song artist
                 artist = song_artist
                 #checks if any of the featured artists are in the header
@@ -279,6 +279,7 @@ class ThreadLyrics(Thread):
                     #grabs all of the blocks we need based on regex searches
                     #of each of the blocks' headers
                     intro = artist_regex('[iI]ntro')
+                    outro = artist_regex('[oO]utro')
                     hooks = artist_regex('[hH]ook|[cC]horus')
                     bridge = artist_regex('[bB]ridge')
                     verses = artist_regex('[vV]erse|' + names_regex)
@@ -292,6 +293,8 @@ class ThreadLyrics(Thread):
                     block_dict['pro']['artist'] = name
                     
                     #these are non essential entries to add if they exist
+                    if intro:
+                        outro['pro']['blocks']['outro'] = outro
                     if intro:
                         block_dict['pro']['blocks']['intro'] = intro
                     if remainders:
