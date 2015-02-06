@@ -318,14 +318,17 @@ class ThreadWrite(Thread):
  
             if not osp.isdir(ap('lyrics')):
                 mkdir(ap('lyrics'))
-
+            name = name.split('/')[-1]
             path = ap('lyrics/' + name + '.json')
             if not osp.isfile(path):          
                 with open(path, 'w+') as f:
                     lyrics_db = dict()
                     lyrics_db[song_name] = data
-                    json.dump(lyrics_db, f, indent=4)
-                    print('first write to: ' + name + ' successful')
+                    try:
+                        json.dump(lyrics_db, f, indent=4)
+                        print('first write to: ' + name + ' successful')
+                    except Exception as e:
+                        print(e)
             else:
                 with open(path, 'rb+') as f:
                     try:
