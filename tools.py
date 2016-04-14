@@ -33,7 +33,7 @@ def ap(path):
     """
         Gets the absolute path of the directory and appends the path to it.
     """
-    return osp.join(osp.dirname(osp.abspath(sys.argv[0])), path)
+    return osp.join(osp.abspath(os.getcwdu()), path)
 
 def an(string):
     '''
