@@ -80,7 +80,7 @@ class ThreadPageNameScrape(Thread):
     '''
         Grabs the song titles from the paginating calls to the designated
         artist page.  The extra headers are so that the server only gives us 
-        the searched artist's paginated differential, and no extranious html.
+        the searched artist's paginated differential, and no extraneous html.
         
         When you scroll down to the bottom of the songs page in a web browser, 
         it will send a AJAX request to the server to grab a tiny packet of 

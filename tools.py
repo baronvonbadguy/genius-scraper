@@ -6,10 +6,11 @@ Created on Mon Jan 19 22:05:40 2015
 """
 import sys
 import re
-import Queue
+import queue
 import json
 from os import listdir
 from os import path as osp
+import os
 from unicodedata import normalize
 from collections import defaultdict
 
@@ -33,7 +34,7 @@ def ap(path):
     """
         Gets the absolute path of the directory and appends the path to it.
     """
-    return osp.join(osp.abspath(os.getcwdu()), path)
+    return osp.join(osp.abspath(os.getcwd()), path)
 
 def an(string):
     '''
@@ -66,7 +67,7 @@ def thread_pool(q, maxthreads, ThreadClass, qo=None, payload=None):
     '''
     pool = list()
     for x in range(maxthreads):
-        if isinstance(qo, Queue.Queue):
+        if isinstance(qo, queue.Queue):
             if payload:
                 t = ThreadClass(q, qo, payload=payload)
             else:

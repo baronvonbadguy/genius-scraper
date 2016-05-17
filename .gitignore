@@ -1,2 +1,4 @@
 lyrics/*
 *.pyc
+.idea/
+.ipynb_checkpoints/

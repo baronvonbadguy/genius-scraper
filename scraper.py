@@ -6,7 +6,7 @@ Created on Mon Jan 19 13:23:46 2015
 """
 from __future__ import print_function
 
-import Queue
+import queue
 from re import search
 import os
 import os.path as osp
@@ -18,7 +18,7 @@ from classes import *
     
 def fetch_hot_artists(page_limit=10):
     '''Fetches top artists from hotnewhiphop.com'''
-    q = Queue.Queue(maxsize=10)
+    q = queue.Queue(maxsize=10)
     pool = thread_pool(q, 10, ThreadFetchHotArtists)
     artists = dict()
 
@@ -36,10 +36,10 @@ def fetch_hot_artists(page_limit=10):
     return cleaned
 
 def scrape(artist_names=['Gucci mane'], updating=False):
-    q_id = Queue.Queue()
-    q_links = Queue.Queue(maxsize=10)
-    q_lyrics = Queue.Queue()
-    q_write = Queue.Queue()
+    q_id = queue.Queue()
+    q_links = queue.Queue(maxsize=10)
+    q_lyrics = queue.Queue()
+    q_write = queue.Queue()
     
     pool_id = thread_pool(q_id, 10, ThreadFetchArtistID, qo=q_links)
     pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics, 
