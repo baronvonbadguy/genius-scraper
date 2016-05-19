@@ -4,36 +4,20 @@ Created on Mon Jan 19 13:23:46 2015
 
 @author: sunshine
 """
-from __future__ import print_function
 
 import queue
-from re import search
-import os
-import os.path as osp
-import json
 
 from tools import *
 from classes import *
 
     
-def fetch_hot_artists(page_limit=10):
-    '''Fetches top artists from hotnewhiphop.com'''
-    q = queue.Queue(maxsize=10)
-    pool = thread_pool(q, 10, ThreadFetchHotArtists)
-    artists = dict()
+def fetch_hot_artists():
+    '''Fetches top artists from wikipedia'''
+    base = 'https://en.wikipedia.org/wiki/List_of_hip_hop_musicians'
+    query = '//li/a/@title'
+    results = xpath_query_url(base, query)
 
-    for page in range(page_limit):
-        q.put((page, artists))
-        print('added page: {}/{} of hot artists into the queue for download'.format(page, page_limit),
-              end='\r')    
-    q.join()
-    del pool
-    
-    cleaned = list()
-    for page in range(len(artists)):
-        cleaned += artists[page]
-    cleaned = [artist for artist in cleaned if not search('&amp', artist)]
-    return cleaned
+    return results
 
 def scrape(artist_names=['Gucci mane'], updating=False):
     q_id = queue.Queue()
