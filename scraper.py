@@ -9,13 +9,16 @@ import queue
 
 from tools import *
 from classes import *
-
+from random import sample
     
-def fetch_hot_artists():
+def fetch_artist_names(random_sample=None):
     '''Fetches top artists from wikipedia'''
     base = 'https://en.wikipedia.org/wiki/List_of_hip_hop_musicians'
     query = '//li/a/@title'
     results = xpath_query_url(base, query)
+
+    if random_sample and random_sample < len(results):
+        results = sample(results, random_sample)
 
     return results
 
@@ -62,10 +65,11 @@ def already_downloaded():
     return links
                     
 if __name__ == '__main__':
+    artists = fetch_artist_names(random_sample=50)
     if len(sys.argv) > 3:
         if '-u' in sys.argv[2]:
-            scrape(artist_names=fetch_hot_artists()[:50], updating=True)
+            scrape(artist_names=artists, updating=True)
     elif len(sys.argv) == 2:
         scrape(artist_names=[sys.argv[1]])
     else:
-        scrape(artist_names=fetch_hot_artists()[:50])
+        scrape(artist_names=artists)
