@@ -4,36 +4,23 @@ Created on Mon Jan 19 13:23:46 2015
 
 @author: sunshine
 """
-from __future__ import print_function
 
 import queue
-from re import search
-import os
-import os.path as osp
-import json
 
 from tools import *
 from classes import *
-
+from random import sample
     
-def fetch_hot_artists(page_limit=10):
-    '''Fetches top artists from hotnewhiphop.com'''
-    q = queue.Queue(maxsize=10)
-    pool = thread_pool(q, 10, ThreadFetchHotArtists)
-    artists = dict()
+def fetch_artist_names(random_sample=None):
+    '''Fetches top artists from wikipedia'''
+    base = 'https://en.wikipedia.org/wiki/List_of_hip_hop_musicians'
+    query = '//li/a/@title'
+    results = xpath_query_url(base, query)
 
-    for page in range(page_limit):
-        q.put((page, artists))
-        print('added page: {}/{} of hot artists into the queue for download'.format(page, page_limit),
-              end='\r')    
-    q.join()
-    del pool
-    
-    cleaned = list()
-    for page in range(len(artists)):
-        cleaned += artists[page]
-    cleaned = [artist for artist in cleaned if not search('&amp', artist)]
-    return cleaned
+    if random_sample and random_sample < len(results):
+        results = sample(results, random_sample)
+
+    return results
 
 def scrape(artist_names=['Gucci mane'], updating=False):
     q_id = queue.Queue()
@@ -78,10 +65,11 @@ def already_downloaded():
     return links
                     
 if __name__ == '__main__':
+    artists = fetch_artist_names(random_sample=50)
     if len(sys.argv) > 3:
         if '-u' in sys.argv[2]:
-            scrape(artist_names=fetch_hot_artists()[:50], updating=True)
+            scrape(artist_names=artists, updating=True)
     elif len(sys.argv) == 2:
         scrape(artist_names=[sys.argv[1]])
     else:
-        scrape(artist_names=fetch_hot_artists()[:50])
+        scrape(artist_names=artists)
