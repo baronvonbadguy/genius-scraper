@@ -7,7 +7,7 @@ Created on Mon Jan 19 22:05:40 2015
 import sys
 import re
 import queue
-import json
+import ujson as json
 from os import listdir
 from os import path as osp
 import os

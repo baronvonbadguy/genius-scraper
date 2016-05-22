@@ -7,6 +7,7 @@ Created on Mon Feb  2 15:41:54 2015
 import re
 import traceback
 import json
+import ujson as json
 from threading import Thread
 from os import mkdir
 from hashlib import md5

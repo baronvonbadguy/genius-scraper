@@ -10,6 +10,7 @@ import queue
 from tools import *
 from classes import *
 from random import sample
+import ujson as json
     
 def fetch_artist_names(random_sample=None):
     '''Fetches top artists from wikipedia'''
