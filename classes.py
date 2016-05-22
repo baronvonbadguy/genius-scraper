@@ -208,7 +208,7 @@ class ThreadLyrics(Thread):
 
             if response.status_code == 200:
                 tree = html.fromstring(response.text)
-                xpath_query = '//div[@class="lyrics"]//text()'
+                xpath_query = '//lyrics//text()'
                 results = tree.xpath(xpath_query)
  
                 #checks to see if the lyrics have more than 10 lines
@@ -218,27 +218,32 @@ class ThreadLyrics(Thread):
                     lyrics = ''.join(results)
 
                     #grab the song name and artist name
-                    xq = '//span[@class="text_title"]/text()'
+                    xq = '//h1[@class="song_header-primary_info-title"]/text()'
                     try:
                         song_name = tree.xpath(xq)[0].strip()
                     except Exception as e:
                         print(e)
                         traceback.print_exc()
 
-                    xq = '//span[@class="text_artist"]/a/text()'
+                    xq = '//a[@class="song_header-primary_info-primary_artist"]/text()'
                     try:
                         name = tree.xpath(xq)[0].strip()
                     except Exception as e:
                         print(e)
                         traceback.print_exc()
- 
-                    #search for group objects, then return all elements if found
-                    ft_group = tree.xpath('//span[@class="featured_artists"]//a/text()')
-                    pr_group = tree.xpath('//span[@class="producer_artists"]//a/text()')
 
-                    features = [ft.strip() for ft in ft_group]
-                    producers = [pr.strip() for pr in pr_group]
-     
+                    #search for group objects, then return all elements if found
+                    def grab_collection(collection):
+                        query = '//expandable-list[@collection="{}"]\
+                                 //span[@class="song_info-info"]//text()'.format(collection)
+                        results = [r.strip() for r in tree.xpath(query)]
+                        positives = [r for r in results if r and ',' not in r]
+
+                        return positives
+
+                    features = grab_collection('song.featured_artists')
+                    producers = grab_collection('song.producer_artists')
+
                     #dictionary to store all of out raw and processed lyrics data
                     block_dict = {'link': link, 'raw': lyrics, 'pro': dict()}
     
