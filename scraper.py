@@ -25,7 +25,7 @@ def fetch_artist_names(random_sample=None):
 
 def scrape(artist_names=['Gucci mane']):
     q_id = queue.Queue()
-    q_links = queue.Queue(maxsize=10)
+    q_links = queue.Queue()
     q_lyrics = queue.Queue()
     q_write = queue.Queue()
     
