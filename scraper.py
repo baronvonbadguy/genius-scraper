@@ -57,19 +57,20 @@ def scrape(artist_names=['Gucci mane'], updating=False):
 
 def already_downloaded():
     links = set()
-    for fp in os.listdir(ap('lyrics/')):
-        ab_fp = ap('lyrics/' + fp)
-        if osp.isfile(ab_fp):
-            with open(ab_fp, 'r') as f:
-                artist = json.load(f)
-                links = links.union(set(artist.keys()))
+    for root, dirs, _ in os.walk(ap('lyrics/')):
+        for dir in dirs:
+            for _, _, files in os.walk(ap('lyrics/{}'.format(dir))):
+                for file in files:
+                    song_name = file.split('.')[0]
+                    link = 'http://genius.com/{}'.format(song_name)
+                    links.add(link)
     return links
                     
 if __name__ == '__main__':
-    artists = fetch_artist_names(random_sample=50)
+    artists = fetch_artist_names()
     if len(sys.argv) > 3:
         if '-u' in sys.argv[2]:
-            scrape(artist_names=artists, updating=True)
+            scrape(artist_names=artists)
     elif len(sys.argv) == 2:
         scrape(artist_names=[sys.argv[1]])
     else:
