@@ -23,7 +23,7 @@ def fetch_artist_names(random_sample=None):
 
     return results
 
-def scrape(artist_names=['Gucci mane'], updating=False):
+def scrape(artist_names=['Gucci mane']):
     q_id = queue.Queue()
     q_links = queue.Queue(maxsize=10)
     q_lyrics = queue.Queue()
@@ -33,8 +33,7 @@ def scrape(artist_names=['Gucci mane'], updating=False):
     pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics, 
                              payload={'skip_links': already_downloaded()})
     pool_lyrics = thread_pool(q_lyrics, 10, ThreadLyrics, qo=q_write)
-    pool_write = thread_pool(q_write, 1, ThreadWrite, 
-                             payload={'updating': updating})
+    pool_write = thread_pool(q_write, 10, ThreadWrite)
     
     for artist in artist_names:
         q_id.put(artist)
