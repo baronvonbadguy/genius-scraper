@@ -10,6 +10,7 @@ import queue
 from tools import *
 from classes import *
 from random import sample
+from re import sub
 import ujson as json
     
 def fetch_artist_names(random_sample=None):
@@ -20,6 +21,9 @@ def fetch_artist_names(random_sample=None):
 
     if random_sample and random_sample < len(results):
         results = sample(results, random_sample)
+
+    if results:
+        results = [sub(' \(rapper\)', '', a) for a in results]
 
     return results
 
