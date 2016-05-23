@@ -28,14 +28,16 @@ def fetch_artist_names(random_sample=None):
     return results
 
 def scrape(artist_names=['Gucci mane']):
+    skip = already_downloaded()
+
     q_id = queue.Queue()
     q_links = queue.Queue()
     q_lyrics = queue.Queue()
     q_write = queue.Queue()
     
     pool_id = thread_pool(q_id, 10, ThreadFetchArtistID, qo=q_links)
-    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics, 
-                             payload={'skip_links': already_downloaded()})
+    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics,
+                             payload={'skip_links': skip})
     pool_lyrics = thread_pool(q_lyrics, 10, ThreadLyrics, qo=q_write)
     pool_write = thread_pool(q_write, 10, ThreadWrite)
     
