@@ -25,7 +25,7 @@ def enc_str(utf):
     '''
         Converts utf-8 strings to ascii by dropping invalid characters.
     '''
-    if isinstance(utf, unicode):
+    if isinstance(utf, str):
         return normalize('NFKD', utf).encode('ascii', 'ignore')
     else:
         return str(utf)
@@ -99,28 +99,3 @@ def xpath_query_url(url, xpath_query, payload=dict()):
     except Exception as e:
         print(e)
         return ''
-
-def load_all_artists():
-    db = defaultdict()
-    for fp in listdir(ap('lyrics/')):
-        ab_fp = ap('lyrics/' + fp)
-        if osp.isfile(ab_fp):
-            name = fp.replace('.json', '')
-            with open(ab_fp, 'r') as f:
-                db[name] = json.load(f)
-    return db
-
-
-def load_all_blocks(block_type=None):
-    db = dict()
-    for fp in listdir(ap('lyrics/')):
-        ab_fp = ap('lyrics/' + fp)
-        if osp.isfile(ab_fp):
-            with open(ab_fp, 'r') as f:
-                artist = json.load(f)
-                for song in artist.keys():
-                    for bg_key in artist[song]['pro']['blocks'].keys():
-                        if not block_type or bg_key in block_type:
-                            for b in artist[song]['pro']['blocks'][bg_key]:
-                                db[b['text hash']] = {'artist': b['artist'],'text': b['text']}
-    return db
