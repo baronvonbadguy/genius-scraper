@@ -7,8 +7,9 @@ Created on Mon Feb  2 15:41:54 2015
 import re
 import traceback
 import json
+import ujson as json
 from threading import Thread
-from os import mkdir
+from os import makedirs
 from hashlib import md5
 from tools import *
 
@@ -207,7 +208,7 @@ class ThreadLyrics(Thread):
 
             if response.status_code == 200:
                 tree = html.fromstring(response.text)
-                xpath_query = '//div[@class="lyrics"]//text()'
+                xpath_query = '//lyrics//text()'
                 results = tree.xpath(xpath_query)
  
                 #checks to see if the lyrics have more than 10 lines
@@ -217,27 +218,32 @@ class ThreadLyrics(Thread):
                     lyrics = ''.join(results)
 
                     #grab the song name and artist name
-                    xq = '//span[@class="text_title"]/text()'
+                    xq = '//h1[@class="song_header-primary_info-title"]/text()'
                     try:
                         song_name = tree.xpath(xq)[0].strip()
                     except Exception as e:
                         print(e)
                         traceback.print_exc()
 
-                    xq = '//span[@class="text_artist"]/a/text()'
+                    xq = '//a[@class="song_header-primary_info-primary_artist"]/text()'
                     try:
                         name = tree.xpath(xq)[0].strip()
                     except Exception as e:
                         print(e)
                         traceback.print_exc()
- 
-                    #search for group objects, then return all elements if found
-                    ft_group = tree.xpath('//span[@class="featured_artists"]//a/text()')
-                    pr_group = tree.xpath('//span[@class="producer_artists"]//a/text()')
 
-                    features = [ft.strip() for ft in ft_group]
-                    producers = [pr.strip() for pr in pr_group]
-     
+                    #search for group objects, then return all elements if found
+                    def grab_collection(collection):
+                        query = '//expandable-list[@collection="{}"]\
+                                 //span[@class="song_info-info"]//text()'.format(collection)
+                        results = [r.strip() for r in tree.xpath(query)]
+                        positives = [r for r in results if r and ',' not in r]
+
+                        return positives
+
+                    features = grab_collection('song.featured_artists')
+                    producers = grab_collection('song.producer_artists')
+
                     #dictionary to store all of out raw and processed lyrics data
                     block_dict = {'link': link, 'raw': lyrics, 'pro': dict()}
     
@@ -308,7 +314,7 @@ class ThreadLyrics(Thread):
                         block_dict['pro']['producers'] = producers
                     if remainders:
                         block_dict['pro']['blocks']['remainders'] = remainders
-                    #print('processed lyrics: ' + song_name)
+                    print('processed lyrics: ' + song_name)
                     self.qo.put((block_dict, song_name, name))
             else:
                 print(song_name + ' download failed or aborted')
@@ -316,50 +322,29 @@ class ThreadLyrics(Thread):
             self.qi.task_done()
 
 class ThreadWrite(Thread):
-    def __init__(self, queue_in, payload):
+    def __init__(self, queue_in):
         Thread.__init__(self)
         self.qi = queue_in
-        self.updating = payload['updating']
 
     def run(self):
         while True:
             data, song_name, name = self.qi.get()
- 
-            if not osp.isdir(ap('lyrics')):
-                mkdir(ap('lyrics'))
             name = name.split('/')[-1]
-            path = ap('lyrics/' + name + '.json')
+            dir = ap('lyrics/{}'.format(name))
+            if not osp.isdir(dir):
+                makedirs(dir)
+
+            file_match = re.search('(?<=http:\/\/genius.com\/).+', data['link'])
+            if file_match:
+                filename = file_match.group()
+            path = ap('lyrics/{}/{}.json'.format(name, filename))
+
             if not osp.isfile(path):          
-                with open(path, 'w+') as f:
-                    lyrics_db = dict()
-                    lyrics_db[song_name] = data
+                with open(path, 'w') as f:
+                    data['name'] = song_name
                     try:
-                        json.dump(lyrics_db, f, indent=4)
-                        print('first write to: ' + name + ' successful')
+                        json.dump(data, f, indent=2)
                     except Exception as e:
                         print(e)
                         traceback.print_exc()
-            else:
-                with open(path, 'r+') as f:
-                    if self.updating:
-                        try:
-                            lyrics_db = json.load(f)
-                            lyrics_db[song_name] = data
-                            json.dump(f, indent=4)
-                        except Exception as e:
-                            print(e)
-                            traceback.print_exc()
-                    else:
-                        try:
-                            lyrics_db = dict()
-                            lyrics_db[song_name] = data
-                            jsondata = json.dumps(lyrics_db, indent=4)[2:-1]
-                            f.seek(-2, 2)
-                            f.write(',\n')
-                            f.write(jsondata)
-                            f.write('}')
-                        except Exception as e:
-                            print(e)
-                            traceback.print_exc()
-
             self.qi.task_done()

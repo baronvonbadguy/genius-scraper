@@ -10,6 +10,8 @@ import queue
 from tools import *
 from classes import *
 from random import sample
+from re import sub
+import ujson as json
     
 def fetch_artist_names(random_sample=None):
     '''Fetches top artists from wikipedia'''
@@ -20,20 +22,24 @@ def fetch_artist_names(random_sample=None):
     if random_sample and random_sample < len(results):
         results = sample(results, random_sample)
 
+    if results:
+        results = [sub(' \(rapper\)', '', a) for a in results]
+
     return results
 
-def scrape(artist_names=['Gucci mane'], updating=False):
+def scrape(artist_names=['Gucci mane']):
+    skip = already_downloaded()
+
     q_id = queue.Queue()
-    q_links = queue.Queue(maxsize=10)
+    q_links = queue.Queue()
     q_lyrics = queue.Queue()
     q_write = queue.Queue()
     
     pool_id = thread_pool(q_id, 10, ThreadFetchArtistID, qo=q_links)
-    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics, 
-                             payload={'skip_links': already_downloaded()})
+    pool_links = thread_pool(q_links, 10, ThreadPageNameScrape, qo=q_lyrics,
+                             payload={'skip_links': skip})
     pool_lyrics = thread_pool(q_lyrics, 10, ThreadLyrics, qo=q_write)
-    pool_write = thread_pool(q_write, 1, ThreadWrite, 
-                             payload={'updating': updating})
+    pool_write = thread_pool(q_write, 10, ThreadWrite)
     
     for artist in artist_names:
         q_id.put(artist)
@@ -56,19 +62,20 @@ def scrape(artist_names=['Gucci mane'], updating=False):
 
 def already_downloaded():
     links = set()
-    for fp in os.listdir(ap('lyrics/')):
-        ab_fp = ap('lyrics/' + fp)
-        if osp.isfile(ab_fp):
-            with open(ab_fp, 'r') as f:
-                artist = json.load(f)
-                links = links.union(set(artist.keys()))
+    for root, dirs, _ in os.walk(ap('lyrics/')):
+        for dir in dirs:
+            for _, _, files in os.walk(ap('lyrics/{}'.format(dir))):
+                for file in files:
+                    song_name = file.split('.')[0]
+                    link = 'http://genius.com/{}'.format(song_name)
+                    links.add(link)
     return links
                     
 if __name__ == '__main__':
-    artists = fetch_artist_names(random_sample=50)
+    artists = fetch_artist_names()
     if len(sys.argv) > 3:
         if '-u' in sys.argv[2]:
-            scrape(artist_names=artists, updating=True)
+            scrape(artist_names=artists)
     elif len(sys.argv) == 2:
         scrape(artist_names=[sys.argv[1]])
     else:
